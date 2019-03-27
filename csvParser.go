@@ -2,28 +2,27 @@ package parser
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
-	"strconv"
-	"time"
 )
 
 //Parser parse a csv file and returns an array of pointers of the type specified
 type Parser interface {
-	Parse(resultType interface{})
+	Parse() (interface{}, error)
 }
 
 //CsvParser parses a csv file and returns an array of pointers the type specified
 type CsvParser struct {
-	CsvFile         string
-	CsvSeparator    rune
-	SkipFirstLine   bool
-	SkipEmptyValues bool
+	CsvFile      string
+	CsvSeparator rune
+	BindObject   interface{}
+	Setter       func(field reflect.Value, colName string, raw string) bool
 }
 
 //Parse creates the array of the given type from the csv file
-func (parser CsvParser) Parse(f interface{}) ([]interface{}, error) {
+func (parser CsvParser) Parse() (interface{}, error) {
 
 	csvFile, err := os.Open(parser.CsvFile)
 	if err != nil {
@@ -33,108 +32,64 @@ func (parser CsvParser) Parse(f interface{}) ([]interface{}, error) {
 
 	var csvReader = csv.NewReader(csvFile)
 	csvReader.Comma = parser.CsvSeparator
-
-	var results = make([]interface{}, 0, 0)
-
-	resultType := reflect.ValueOf(f).Type()
-
-	if parser.SkipFirstLine {
-		csvReader.Read()
+	csvRows, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, err
 	}
 
-	for {
+	var resultType = GetMetaType(parser.BindObject)
+	if checkType(resultType) {
+		return nil, errors.New(fmt.Sprintf("type %v not supported", resultType.Name()))
+	}
+	results := reflect.New(reflect.SliceOf(reflect.PtrTo(resultType)))
 
-		rawCSVLine, err := csvReader.Read()
-		if err != nil {
-			if fmt.Sprint(err) == "EOF" {
-				break
-			} else {
-				return nil, err
+	headers := csvRows[0]
+	body := csvRows[1:]
+	var csvField = make(map[string]int)
+	for _, col := range headers {
+		for j := 0; j < resultType.NumField(); j+=1 {
+			field := resultType.Field(j)
+			tag := field.Tag.Get("csv")
+			if col == tag {
+				csvField[col] = j
 			}
 		}
+	}
 
-		var newResult = reflect.New(resultType).Interface()
 
-		// set all the struct fields
-		for fieldIndex := 0; fieldIndex < resultType.NumField(); fieldIndex++ {
-			var currentField = resultType.Field(fieldIndex)
-
-			var csvTag = currentField.Tag.Get("csv")
-			var csvColumnIndex, csvTagErr = strconv.Atoi(csvTag)
-
-			if csvTagErr != nil {
-				if csvTag == "" {
-					csvColumnIndex = fieldIndex
-				} else {
-					return nil, csvTagErr
-				}
-			}
-
-			if csvColumnIndex < 0 {
-				return nil, fmt.Errorf("csv tag in struct field %v is less than zero", currentField.Name)
-			}
-
-			if csvColumnIndex >= len(rawCSVLine) {
-				return nil, fmt.Errorf("Trying to access csv column %v for field %v, but csv has only %v column(s)", csvColumnIndex, currentField.Name, len(rawCSVLine))
-			}
-
-			var csvElement = rawCSVLine[csvColumnIndex]
-			var settableField = reflect.ValueOf(newResult).Elem().FieldByName(currentField.Name)
-
-			if csvElement == "" && parser.SkipEmptyValues {
+	for _, csvRow := range body {
+		obj := reflect.New(resultType)
+		for j, csvCol := range csvRow {
+			colName := headers[j]
+			idx, ok := csvField[colName]
+			if !ok {
 				continue
 			}
-
-			switch currentField.Type.Name() {
-
-			case "bool":
-				var parsedBool, err = strconv.ParseBool(csvElement)
-				if err != nil {
-					return nil, err
-				}
-				settableField.SetBool(parsedBool)
-
-			case "uint", "uint8", "uint16", "uint32", "uint64":
-				var parsedUint, err = strconv.ParseUint(csvElement, 10, 64)
-				if err != nil {
-					return nil, err
-				}
-				settableField.SetUint(uint64(parsedUint))
-
-			case "int", "int32", "int64":
-				var parsedInt, err = strconv.Atoi(csvElement)
-				if err != nil {
-					return nil, err
-				}
-				settableField.SetInt(int64(parsedInt))
-
-			case "float32":
-				var parsedFloat, err = strconv.ParseFloat(csvElement, 32)
-				if err != nil {
-					return nil, err
-				}
-				settableField.SetFloat(parsedFloat)
-
-			case "float64":
-				var parsedFloat, err = strconv.ParseFloat(csvElement, 64)
-				if err != nil {
-					return nil, err
-				}
-				settableField.SetFloat(parsedFloat)
-
-			case "string":
-				settableField.SetString(csvElement)
-
-			case "Time":
-				var date, err = time.Parse(currentField.Tag.Get("csvDate"), csvElement)
-				if err != nil {
-					return nil, err
-				}
-				settableField.Set(reflect.ValueOf(date))
+			currentField := obj.Elem().Field(idx)
+			if parser.Setter != nil && parser.Setter(currentField, colName, csvCol) {
+				continue
+			}else {
+				setField(currentField, csvCol, true)
 			}
 		}
-
-		results = append(results, newResult)
+		ele := reflect.Append(results.Elem(), obj)
+		results.Elem().Set(ele)
 	}
-	return results, err
+	return results.Interface(), err
+}
+
+
+// 获取obj的反射类型, 如果obj是指针，则返回指向的类型
+func GetMetaType(obj interface{}) reflect.Type {
+	if reflect.TypeOf(obj).Kind() == reflect.Ptr {
+		return reflect.ValueOf(obj).Elem().Type()
+	}
+	return reflect.TypeOf(obj)
+}
+
+func checkType(p reflect.Type) bool {
+	if p.Kind() != reflect.Struct {
+		return false
+	}
+	return true
 }

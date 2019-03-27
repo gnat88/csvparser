@@ -1,2 +1,2 @@
-Tom,Jones,true,56,42000.32,42000.64,10,Senior Director,buyer@mymail.com,1999-06-07,"Self-described as ""the top"" branding guru on the West Coast"
-Ian,Dury,false,32,42001.34,42001.64,3,Chief Imagineer,cto@mymail.com,2000-07-08,"World-renowned expert in fuzzy logic design.Influential in technology purchases."
+id;name;vip;ext
+100;lily;4;"{""x"":1,""y"":2}"

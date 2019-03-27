@@ -1,8 +1,9 @@
 package parser
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"testing"
@@ -28,23 +29,25 @@ type User struct {
 	Ext Extra `csv:"ext"`
 }
 
-func TestMain(m *testing.M) {
+type sLoader struct {
 
-	e1 := &Extra{
-		X:1,
-		Y:2,
-	}
-	bts, _ := json.Marshal(e1)
-	fmt.Println(string(bts))
+}
+
+func (s *sLoader)Reader() (io.Reader, error) {
+	return bytes.NewBufferString(`id;name;vip;ext
+1;tang;4;"{""x"":1,""y"":2}"`), nil
+}
+func TestMain(m *testing.M) {
 	csvParser = CsvParser{
-		CsvFile:      "example_files/example.csv",
+		//Loader:NewFileLoader("example_files/example.csv"),
+		Loader:&sLoader{},
 		CsvSeparator: ';',
-		BindObject:   reflect.TypeOf(User{}),
-		Handler:      LoadUser,
+		BindObject:  User{},
+		Setter:      LoadUser,
 	}
 
 	var ret interface{}
-	ret, parseErr1 = csvParser.Parse(nil)
+	ret, parseErr1 = csvParser.Parse()
 
 	fmt.Printf("%v", (*(ret.(*[]*User)))[0])
 
@@ -54,7 +57,7 @@ func TestMain(m *testing.M) {
 }
 
 
-func LoadUser(colName string, val reflect.Value, raw string) bool {
+func LoadUser(val reflect.Value, colName, raw string) bool {
 	if colName == "vip" {
 		i, _ := toInt(raw)
 		val.SetInt(i*2)

@@ -4,33 +4,60 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 )
 
-//Parser parse a csv file and returns an array of pointers of the type specified
-type Parser interface {
-	Parse() (interface{}, error)
+type Loader interface {
+	Reader() (io.Reader, error)
 }
-
 //CsvParser parses a csv file and returns an array of pointers the type specified
 type CsvParser struct {
-	CsvFile      string
+	Loader 	Loader
 	CsvSeparator rune
 	BindObject   interface{}
 	Setter       func(field reflect.Value, colName string, raw string) bool
 }
 
+type csvFileLoader struct {
+	filename string
+}
+
+func NewFileLoader(filename string) Loader {
+	return &csvFileLoader{
+		filename:filename,
+	}
+}
+
+func (c *csvFileLoader) Reader() (io.Reader, error) {
+	csvFile, err := os.Open(c.filename)
+	defer func() {
+		if r := recover(); r != nil {
+			csvFile.Close()
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+	return csvFile, nil
+}
+
+
 //Parse creates the array of the given type from the csv file
 func (parser CsvParser) Parse() (interface{}, error) {
-
+/*
 	csvFile, err := os.Open(parser.CsvFile)
 	if err != nil {
 		return nil, err
 	}
 	defer csvFile.Close()
-
-	var csvReader = csv.NewReader(csvFile)
+*/
+	io, err := parser.Loader.Reader()
+	if err != nil {
+		return nil, err
+	}
+	var csvReader = csv.NewReader(io)
 	csvReader.Comma = parser.CsvSeparator
 	csvRows, err := csvReader.ReadAll()
 	if err != nil {
@@ -38,7 +65,7 @@ func (parser CsvParser) Parse() (interface{}, error) {
 	}
 
 	var resultType = GetMetaType(parser.BindObject)
-	if checkType(resultType) {
+	if !checkType(resultType) {
 		return nil, errors.New(fmt.Sprintf("type %v not supported", resultType.Name()))
 	}
 	results := reflect.New(reflect.SliceOf(reflect.PtrTo(resultType)))

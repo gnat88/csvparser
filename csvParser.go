@@ -9,12 +9,12 @@ import (
 	"reflect"
 )
 
-type Loader interface {
+type CSVReader interface {
 	Reader() (io.Reader, error)
 }
 //CsvParser parses a csv file and returns an array of pointers the type specified
 type CsvParser struct {
-	Loader 	Loader
+	CsvReader 	CSVReader
 	CsvSeparator rune
 	BindObject   interface{}
 	Setter       func(field reflect.Value, colName string, raw string) bool
@@ -24,7 +24,7 @@ type csvFileLoader struct {
 	filename string
 }
 
-func NewFileLoader(filename string) Loader {
+func NewFileLoader(filename string) CSVReader {
 	return &csvFileLoader{
 		filename:filename,
 	}
@@ -46,14 +46,8 @@ func (c *csvFileLoader) Reader() (io.Reader, error) {
 
 //Parse creates the array of the given type from the csv file
 func (parser CsvParser) Parse() (interface{}, error) {
-/*
-	csvFile, err := os.Open(parser.CsvFile)
-	if err != nil {
-		return nil, err
-	}
-	defer csvFile.Close()
-*/
-	io, err := parser.Loader.Reader()
+
+	io, err := parser.CsvReader.Reader()
 	if err != nil {
 		return nil, err
 	}

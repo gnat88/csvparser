@@ -19,14 +19,16 @@ var parseErr3 error
 var csvParser CsvParser
 
 type Extra struct {
-	X int	`json:"x"`
-	Y int	`json:"y"`
+	Type int	`json:"type"`
+	Subtype int	`json:"subtype"`
+	Amount int `json:"amount"`
 }
 type User struct {
 	Id int32 `csv:"id"`
 	Name string `csv:"name"`
 	Vip int32 `csv:"vip"`
-	Ext Extra `csv:"ext"`
+	Cols []int32 `csv:"cols"`
+	Ext []Extra `csv:"ext"`
 }
 
 type sLoader struct {
@@ -34,13 +36,13 @@ type sLoader struct {
 }
 
 func (s *sLoader)Reader() (io.Reader, error) {
-	return bytes.NewBufferString(`id;name;vip;ext
-1;tang;4;"{""x"":1,""y"":2}"`), nil
+	return bytes.NewBufferString(`id;name;vip;ext;cols
+1;tang;4;"[{""type"":1, ""amount"":2},{""type"":3, ""subtype"":10001,""amount"":4}]";"[1,2,3]"`), nil
 }
 func TestMain(m *testing.M) {
 	csvParser = CsvParser{
-		//Loader:NewFileLoader("example_files/example.csv"),
-		Loader:&sLoader{},
+		//CsvReader:NewFileLoader("example_files/example.csv"),
+		CsvReader:&sLoader{},
 		CsvSeparator: ';',
 		BindObject:  User{},
 		Setter:      LoadUser,
@@ -48,8 +50,9 @@ func TestMain(m *testing.M) {
 
 	var ret interface{}
 	ret, parseErr1 = csvParser.Parse()
+	x := *(ret.(*[]*User))
 
-	fmt.Printf("%v", (*(ret.(*[]*User)))[0])
+	fmt.Printf("%v", *x[0])
 
 
 	//run all the tests
